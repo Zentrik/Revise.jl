@@ -1061,7 +1061,7 @@ If it is in Base, this will execute `track(Base)` if necessary.
 
 This is a callback function used by `CodeTracking.jl`'s `definition`.
 """
-function get_def(method::Method; modified_files=revision_queue)
+function get_def(method::Method; modified_files=revision_queue, warn::Bool=true)
     yield()   # magic bug fix for the OSX test failures. TODO: figure out why this works (prob. Julia bug)
     if method.file === :none && String(method.name)[1] == '#'
         # This is likely to be a kwarg method, try to find something with location info
@@ -1079,7 +1079,7 @@ function get_def(method::Method; modified_files=revision_queue)
         end
         return hassig
     end
-    id = get_tracked_id(method.module; modified_files=modified_files)
+    id = get_tracked_id(method.module; modified_files=modified_files, warn)
     id === nothing && return false
     pkgdata = pkgdatas[id]
     filename = relpath(filename, pkgdata)
@@ -1090,7 +1090,7 @@ function get_def(method::Method; modified_files=revision_queue)
     # Lookup can fail for macro-defined methods, see https://github.com/JuliaLang/julia/issues/31197
     # We need to find the right file.
     if method.module == Base || method.module == Core || method.module == Core.Compiler
-        @warn "skipping $method to avoid parsing too much code"
+        warn && @warn "skipping $method to avoid parsing too much code"
         CodeTracking.invoked_setindex!(CodeTracking.method_info, method.sig, missing)
         return false
     end
@@ -1108,7 +1108,7 @@ function get_def(method::Method; modified_files=revision_queue)
         def = get_def(method, pkgdata, file)
         def !== nothing && return true
     end
-    @warn "$(method.sig) was not found"
+    warn && @warn "$(method.sig) was not found"
     # So that we don't call it again, store missingness info in CodeTracking
     CodeTracking.invoked_setindex!(CodeTracking.method_info, method.sig, missing)
     return false
@@ -1119,7 +1119,7 @@ function get_def(method, pkgdata, filename)
     return get(CodeTracking.method_info, method.sig, nothing)
 end
 
-function get_tracked_id(id::PkgId; modified_files=revision_queue)
+function get_tracked_id(id::PkgId; modified_files=revision_queue, warn::Bool=true)
     # Methods from Base or the stdlibs may require that we start tracking
     if !haskey(pkgdatas, id)
         recipe = id.name === "Compiler" ? :Compiler : Symbol(id.name)
@@ -1127,7 +1127,7 @@ function get_tracked_id(id::PkgId; modified_files=revision_queue)
         _track(id, recipe; modified_files=modified_files)
         @info "tracking $recipe"
         if !haskey(pkgdatas, id)
-            @warn "despite tracking $recipe, $id was not found"
+            warn && @warn "despite tracking $recipe, $id was not found"
             return nothing
         end
     end
